@@ -1,0 +1,62 @@
+- name: Install Node Exporter
+  hosts: all
+  become: yes
+
+  vars:
+    node_exporter_version: "1.11.1"
+
+  tasks:
+    - name: Install required packages
+      yum:
+        name: tar
+        state: present
+
+    - name: Download node exporter
+      get_url:
+        url: "https://github.com/prometheus/node_exporter/releases/download/v{{ node_exporter_version }}/node_exporter-{{ node_exporter_version }}.linux-amd64.tar.gz"
+        dest: /tmp/node_exporter.tar.gz
+
+    - name: Extract node exporter
+      unarchive:
+        src: /tmp/node_exporter.tar.gz
+        dest: /tmp/
+        remote_src: yes
+
+    - name: Find node exporter binary
+      find:
+        paths: /tmp
+        patterns: node_exporter
+        recurse: yes
+        file_type: file
+      register: exporter_files
+
+    - name: Copy binary
+      copy:
+        src: "{{ exporter_files.files[0].path }}"
+        dest: /usr/local/bin/node_exporter
+        mode: '0755'
+        remote_src: yes
+
+    - name: Create systemd service
+      copy:
+        dest: /etc/systemd/system/node_exporter.service
+        content: |
+          [Unit]
+          Description=Node Exporter
+          After=network.target
+
+          [Service]
+          ExecStart=/usr/local/bin/node_exporter
+          Restart=always
+
+          [Install]
+          WantedBy=multi-user.target
+
+    - name: Reload systemd
+      command: systemctl daemon-reexec
+
+    - name: Enable and start node exporter
+      service:
+        name: node_exporter
+        state: started
+        enabled: yes

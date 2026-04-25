@@ -1,0 +1,111 @@
+- name: Setup Monitoring Server
+  hosts: monitor
+  become: yes
+
+  vars:
+    prometheus_version: "3.11.2"
+    target1: "172.31.1.200:9100" # Change according to the private ip of your target instances
+    target2: "172.31.1.107:9100" # Change according to the private ip of your target instances
+
+  tasks:
+    - name: Create prometheus user
+      user:
+        name: prometheus
+        shell: /sbin/nologin
+
+    - name: Create directories
+      file:
+        path: "{{ item }}"
+        state: directory
+        owner: prometheus
+        group: prometheus
+      loop:
+        - /etc/prometheus
+        - /var/lib/prometheus
+
+    - name: Download Prometheus
+      get_url:
+        url: "https://github.com/prometheus/prometheus/releases/download/v{{ prometheus_version }}/prometheus-{{ prometheus_version }}.linux-amd64.tar.gz"
+        dest: /tmp/prometheus.tar.gz
+  
+    - name: Extract Prometheus
+      unarchive:
+        src: /tmp/prometheus.tar.gz
+        dest: /tmp/
+        remote_src: yes
+    
+    - name: Copy prometheus binary
+      copy:
+        src: "/tmp/prometheus-{{ prometheus_version }}.linux-amd64/prometheus"
+        dest: /usr/local/bin/prometheus
+        mode: '0755'
+        remote_src: yes
+    
+    - name: Copy promtool binary
+      copy:
+        src: "/tmp/prometheus-{{ prometheus_version }}.linux-amd64/promtool"
+        dest: /usr/local/bin/promtool
+        mode: '0755'
+        remote_src: yes
+        
+    - name: Create Prometheus config
+      copy:
+        dest: /etc/prometheus/prometheus.yml
+        content: |
+          global:
+            scrape_interval: 15s
+
+          scrape_configs:
+            - job_name: "nodes"
+              static_configs:
+                - targets: ["{{ target1 }}","{{ target2 }}"]
+
+    - name: Create systemd service
+      copy:
+        dest: /etc/systemd/system/prometheus.service
+        content: |
+          [Unit]
+          Description=Prometheus
+          After=network.target
+
+          [Service]
+          User=prometheus
+          ExecStart=/usr/local/bin/prometheus \
+            --config.file=/etc/prometheus/prometheus.yml \
+            --storage.tsdb.path=/var/lib/prometheus
+          Restart=always
+
+          [Install]
+          WantedBy=multi-user.target
+
+    - name: Reload systemd
+      command: systemctl daemon-reexec
+
+    - name: Start Prometheus
+      service:
+        name: prometheus
+        state: started
+        enabled: yes
+
+    - name: Add Grafana repo
+      copy:
+        dest: /etc/yum.repos.d/grafana.repo
+        content: |
+          [grafana]
+          name=Grafana
+          baseurl=https://packages.grafana.com/oss/rpm
+          repo_gpgcheck=1
+          enabled=1
+          gpgcheck=1
+          gpgkey=https://packages.grafana.com/gpg.key
+
+    - name: Install Grafana
+      yum:
+        name: grafana
+        state: present
+
+    - name: Start Grafana
+      service:
+        name: grafana-server
+        state: started
+        enabled: yes

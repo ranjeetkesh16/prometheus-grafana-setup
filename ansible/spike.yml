@@ -1,0 +1,30 @@
+- name: Generate CPU spike
+  hosts: target
+  become: yes
+
+  tasks:
+    - name: Install stress tool
+      yum:
+        name: stress
+        state: present
+
+    - name: Run CPU stress
+      command: stress --cpu 2 --timeout 120 # Change according to yout convenience
+
+- name: Generate RAM spike on target nodes
+  hosts: target
+  become: yes
+
+  vars:
+    ram_size: "512M"
+    duration: 120   # Change according to yout convenience
+ 
+
+  tasks:
+    - name: Install stress-ng
+      yum:
+        name: stress-ng
+        state: present
+
+    - name: Run RAM stress
+      command: stress-ng --vm 1 --vm-bytes {{ ram_size }} --timeout {{ duration }}s
